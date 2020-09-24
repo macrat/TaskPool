@@ -196,6 +196,71 @@ Describe "TaskPool" {
         $result.Complete | Should Be 100
     }
 
+    It "max retry" {
+        $pool = [TaskPool]::new()
+
+        $pool.Add([Task]@{
+            Name = "fail-task1"
+            Action = {
+                throw "always error"
+            }
+            MaxRetry = 5
+        })
+        $pool.Add([Task]@{
+            Name = "fail-task2"
+            Action = {
+                throw "always error"
+            }
+            MaxRetry = 3
+        })
+
+        $result = [PSCustomObject]@{
+            Complete = 0
+            Error = 0
+        }
+        $pool.OnTaskComplete.Add({
+            $result.Complete += 1
+        }.GetNewClosure())
+        $pool.OnTaskError.Add({
+            $result.Error += 1
+        }.GetNewClosure())
+
+        $pool.Run()
+
+        $result.Complete | Should Be 0
+        $result.Error | Should Be 10  # (1 + 5) + (1 + 3)
+    }
+
+    It "no retry" {
+        $pool = [TaskPool]::new()
+
+        $pool.Add([Task]@{
+            Name = "fail-task"
+            Action = {
+                throw "always error"
+            }
+            MaxRetry = 0
+        })
+
+        $result = [PSCustomObject]@{
+            Complete = 0
+            Error = 0
+        }
+        $pool.OnTaskComplete.Add({
+            Write-Host "complete $_"
+            $result.Complete += 1
+        }.GetNewClosure())
+        $pool.OnTaskError.Add({
+            Write-Host "error $_"
+            $result.Error += 1
+        }.GetNewClosure())
+
+        $pool.Run()
+
+        $result.Complete | Should Be 0
+        $result.Error | Should Be 1
+    }
+
     It "dynamic create task" {
         $pool = [TaskPool]::new()
 
