@@ -266,7 +266,7 @@ class TaskPool {
             } else {
                 $this.OnTaskError.Invoke($result)
 
-                if ($task.MaxRetry -le 0 -or $task.RetryCount -lt $task.MaxRetry) {
+                if ($task.MaxRetry -lt 0 -or $task.RetryCount -lt $task.MaxRetry) {
                     $task.RetryCount += 1
                     $this.Queue.Enqueue($task)
                 }
