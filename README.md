@@ -17,7 +17,7 @@ for ($target in @("world", "alice", "jhon", "cat", "dog")) {
         param($someone)
 
         "hello ${someone}!"
-    }
+    }, @($target))
 }
 
 $pool.OnTaskComplete.Add({
