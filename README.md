@@ -7,22 +7,21 @@ The task scheduling module for PowerShell.
 ## Example
 
 ``` ps1
-using module .\TaskPool
+Import-Module .\TaskPool
 
 
-$pool = [TaskPool]::new()
+$pool = New-TPTaskPool -OnTaskComplete {
+    Write-Host "$($_.Task.Name): $($_.Result)"
+}
 
 for ($target in @("world", "alice", "jhon", "cat", "dog")) {
-    $pool.Add("greeting to ${target}", {
+    Add-TPTask $pool {
         param($someone)
 
         "hello ${someone}!"
-    }, @($target))
+    } -Arguments @($target)
 }
 
-$pool.OnTaskComplete.Add({
-    Write-Host "$($_.Task.Name): $($_.Result)"
-})
 
 $pool.Run()  # run greeting tasks parallel (in default, run max 3 task in same time)
 # OUTPUT:
@@ -35,19 +34,17 @@ $pool.Run()  # run greeting tasks parallel (in default, run max 3 task in same t
 
 
 ``` ps1
-using module .\TaskPool
+Import-Module .\TaskPool
 
 
-$pool = [TaskPool]::new(5)  # 5 tasks will be parallel execute
+$pool = New-TPTaskPool -NumSlots 5  # 5 tasks will be parallel execute
 
-$pool.Add([Task]@{
-    Name = "task name"
-    MaxRetry = 4  # 4 times retry if fail. The first execution is not included, so total max 5 times execute.
-    Arguments = @("foo", "bar")
-    Action = {
-        $Args -join ","
-    }
-})
+Add-TPTask                       `
+    -Pool $pool                  `
+    -Action { $Args -join "," }  `
+    -Arguments = @("foo", "bar") `
+    -MaxRetry 4                  `
+    -Name "task name"
 
 $pool.OnTaskError.Add({
     Write-Error $_.Error

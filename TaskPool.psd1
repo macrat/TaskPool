@@ -5,4 +5,6 @@
     CompatiblePSEditions = @('5.1')
     Author = 'SHIDA Yuuma <m@crat.jp>'
     Copyright = '(C)2020- SHIDA Yuuma. MIT License.'
+    CmdletsToExport = @('New-TaskPool', 'Add-Task')
+    DefaultCommandPrefix = 'TP'
 }

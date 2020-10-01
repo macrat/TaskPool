@@ -1,137 +1,28 @@
-using module .\TaskPool.psd1
-
-
-Describe "Task" {
-    It "success job" {
-        $task = [Task]@{
-            Name = "TaskA"
-            Action = {
-                $Args[0] + $Args[1]
-            }
-            Arguments = @(1, 2)
-        }
-
-        $result = $task.Start().Join()
-        $task.Teardown()
-
-        $result.GetType().Name | Should Be "TaskResult"
-        $result.Task.Name | Should Be "TaskA"
-
-        $result.Error | Should Be $null
-        $result.Success | Should Be $true
-        $result.Result | Should Be 3
-    }
-
-    It "fail job" {
-        $task = [Task]@{
-            Name = "TaskB"
-            Action = {
-                throw "error on $($Args[0])"
-            }
-            Arguments = "foobar"
-        }
-
-        $result = $task.Start().Join()
-        $task.Teardown()
-
-        $result.GetType().Name | Should Be "TaskResult"
-        $result.Task.Name | Should Be "TaskB"
-
-        $result.Error | Should Be "error on foobar"
-        $result.Success | Should Be $false
-        $result.Result | Should Be $null
-    }
-
-    It "invalid task" {
-        {
-            ([Task]@{
-                Action = {}
-            }).Start()
-        } | Should Throw "Name was not set"
-
-        {
-            ([Task]@{
-                Name = "hello"
-            }).Start()
-        } | Should Throw "Action was not set"
-    }
-}
-
-
-Describe "EventManager" {
-    It "add and remove" {
-        $em = [EventManager]::new()
-        $a = { Write-Host hello }
-        $b = { Write-Host world }
-
-        $em.Count | Should Be 0
-
-        $em.Add($a)
-        $em.Count | Should Be 1
-
-        $em.Add($b)
-        $em.Count | Should Be 2
-
-        $em.Add($a)
-        $em.Count | Should Be 2
-
-        $em.Remove($a)
-        $em.Count | Should Be 1
-
-        $em.Remove($a)
-        $em.Count | Should Be 1
-
-        $em.Remove($b)
-        $em.Count | Should Be 0
-    }
-
-    It "invoke" {
-        $log = [System.Collections.ArrayList]::new()
-        $em = [EventManager]::new()
-
-        $em.Add({
-            $log.Add("taskA($_)")
-        }.GetNewClosure())
-
-        $em.Add({
-            $log.Add("taskB($_)")
-        }.GetNewClosure())
-
-        $log.Count | Should Be 0
-        $log -join "," | Should Be ""
-
-        $em.Invoke(1)
-        $log.Count | Should Be 2
-        $log -join "," | Should Be "taskA(1),taskB(1)"
-
-        $em.Invoke("two")
-        $log.Count | Should Be 4
-        $log -join "," | Should Be "taskA(1),taskB(1),taskA(two),taskB(two)"
-    }
-}
+import-module .\TaskPool.psd1
 
 
 Describe "TaskPool" {
     It "serial run" {
-        $pool = [TaskPool]::new(1)
-
-        foreach ($i in 1..10) {
-            $pool.Add("Task $i", {
-                $Args[0] * 2
-            }, $i)
-        }
-
         $result = [PSCustomObject]@{
             Log = @()
             Error = 0
         }
-        $pool.OnTaskComplete.Add({
-            $result.Log += $_.Result
-        }.GetNewClosure())
-        $pool.OnTaskError.Add({
-            Write-Error $_.Error
-            $result.Error += 1
-        }.GetNewClosure())
+
+        $pool = New-TPTaskPool `
+            -NumSlots 1 `
+            -OnTaskComplete {
+                $result.Log += $_.Result
+            }.GetNewClosure() `
+            -OnTaskError {
+                Write-Error $_.Error
+                $result.Error += 1
+            }.GetNewClosure()
+
+        foreach ($i in 1..10) {
+            Add-TPTask $pool {
+                $Args[0] * 2
+            } -Arguments $i
+        }
 
         $pool.Run()
 
@@ -141,25 +32,25 @@ Describe "TaskPool" {
     }
 
     It "parallel run" {
-        $pool = [TaskPool]::new(5)
-
-        foreach ($i in 1..10) {
-            $pool.Add("Task $i", {
-                $Args[0] * 2
-            }, $i)
-        }
-
         $result = [PSCustomObject]@{
             Sum = 0
             Error = 0
         }
-        $pool.OnTaskComplete.Add({
-            $result.Sum += [int]$_.Result
-        }.GetNewClosure())
-        $pool.OnTaskError.Add({
-            Write-Error $_.Error
-            $result.Error += 1
-        }.GetNewClosure())
+        $pool = New-TPTaskPool `
+            -NumSlots 5 `
+            -OnTaskComplete {
+                $result.Sum += [int]$_.Result
+            }.GetNewClosure() `
+            -OnTaskError {
+                Write-Error $_.Error
+                $result.Error += 1
+            }.GetNewClosure()
+
+        foreach ($i in 1..10) {
+            Add-TPTask $pool -Name "Task $i" -Arguments $i -Action {
+                $Args[0] * 2
+            }
+        }
 
         $pool.Run()
 
@@ -168,26 +59,26 @@ Describe "TaskPool" {
     }
 
     It "retry task" {
-        $pool = [TaskPool]::new(50)
-
-        foreach ($i in 1..100) {
-            $pool.Add("task$i", {
-                if ((Get-Random -min 1 -max 10) -eq 1) {
-                    throw "something error"
-                }
-            })
-        }
-
         $result = [PSCustomObject]@{
             Complete = 0
             Error = 0
         }
-        $pool.OnTaskComplete.Add({
-            $result.Complete += 1
-        }.GetNewClosure())
-        $pool.OnTaskError.Add({
-            $result.Error += 1
-        }.GetNewClosure())
+        $pool = New-TPTaskPool `
+            -NumSlots 50 `
+            -OnTaskComplete {
+                $result.Complete += 1
+            }.GetNewClosure() `
+            -OnTaskError {
+                $result.Error += 1
+            }.GetNewClosure()
+
+        foreach ($i in 1..100) {
+            Add-TPTask $pool {
+                if ((Get-Random -min 1 -max 10) -eq 1) {
+                    throw "something error"
+                }
+            }
+        }
 
         $pool.Run()
 
@@ -197,33 +88,24 @@ Describe "TaskPool" {
     }
 
     It "max retry" {
-        $pool = [TaskPool]::new()
-
-        $pool.Add([Task]@{
-            Name = "fail-task1"
-            Action = {
-                throw "always error"
-            }
-            MaxRetry = 5
-        })
-        $pool.Add([Task]@{
-            Name = "fail-task2"
-            Action = {
-                throw "always error"
-            }
-            MaxRetry = 3
-        })
-
         $result = [PSCustomObject]@{
             Complete = 0
             Error = 0
         }
-        $pool.OnTaskComplete.Add({
-            $result.Complete += 1
-        }.GetNewClosure())
-        $pool.OnTaskError.Add({
-            $result.Error += 1
-        }.GetNewClosure())
+        $pool = New-TPTaskPool `
+            -OnTaskComplete {
+                $result.Complete += 1
+            }.GetNewClosure() `
+            -OnTaskError {
+                $result.Error += 1
+            }.GetNewClosure()
+
+        Add-TPTask $pool {
+            throw "always error"
+        } -MaxRetry 5
+        Add-TPTask $pool {
+            throw "always error"
+        } -MaxRetry 3
 
         $pool.Run()
 
@@ -232,28 +114,21 @@ Describe "TaskPool" {
     }
 
     It "no retry" {
-        $pool = [TaskPool]::new()
-
-        $pool.Add([Task]@{
-            Name = "fail-task"
-            Action = {
-                throw "always error"
-            }
-            MaxRetry = 0
-        })
-
         $result = [PSCustomObject]@{
             Complete = 0
             Error = 0
         }
-        $pool.OnTaskComplete.Add({
-            Write-Host "complete $_"
-            $result.Complete += 1
-        }.GetNewClosure())
-        $pool.OnTaskError.Add({
-            Write-Host "error $_"
-            $result.Error += 1
-        }.GetNewClosure())
+        $pool = New-TPTaskPool `
+            -OnTaskComplete {
+                $result.Complete += 1
+            }.GetNewClosure() `
+            -OnTaskError {
+                $result.Error += 1
+            }.GetNewClosure()
+
+        Add-TPTask -Name "fail-task" $pool -MaxRetry 0 -Action {
+            throw "always error"
+        }
 
         $pool.Run()
 
@@ -262,8 +137,6 @@ Describe "TaskPool" {
     }
 
     It "dynamic create task" {
-        $pool = [TaskPool]::new()
-
         $task = {
             param([int]$count)
 
@@ -276,26 +149,92 @@ Describe "TaskPool" {
                 $null
             }
         }
-        $pool.Add("task1", $task, 1)
 
         $result = [PSCustomObject]@{
             Complete = 0
             Error = 0
         }
+        $pool = New-TPTaskPool `
+            -OnTaskError {
+                Write-Error $_.Error
+                $result.Error += 1
+            }.GetNewClosure()
+
         $pool.OnTaskComplete.Add({
             $result.Complete += 1
             if ($_.Result -ne $null) {
-                $pool.Add($_.Result.Name, $task, $_.Result.Arguments)
+                Add-TPTask $pool $task -Name $_.Result.Name -Arguments $_.Result.Arguments
             }
         }.GetNewClosure())
-        $pool.OnTaskError.Add({
-            Write-Error $_.Error
-            $result.Error += 1
-        }.GetNewClosure())
+
+        Add-TPTask $pool $task -Name "task1" -Arguments @(1)
 
         $pool.Run()
 
         $result.Error | Should Be 0
         $result.Complete | Should Be 5
+    }
+}
+
+
+Describe "New-TaskPool" {
+    It "num slots" {
+        (New-TPTaskPool).NumSlots | Should Be 3
+        (New-TPTaskPool -NumSlots 2).NumSlots | Should Be 2
+        (New-TPTaskPool -NumSlots 0).NumSlots | Should Be 1
+        (New-TPTaskPool -NumSlots -1).NumSlots | Should Be 1
+    }
+
+    It "OnTaskComplete" {
+        $cb = {}
+        $cb2 = {}
+
+        $pool = (New-TPTaskPool -OnTaskComplete $cb).OnTaskComplete
+        $pool.Count | Should Be 1
+        $pool.Handlers[0] | Should Be $cb
+
+        $pool = (New-TPTaskPool -OnTaskComplete @($cb, $cb, $cb)).OnTaskComplete
+        $pool.Count | Should Be 1
+        $pool.Handlers[0] | Should Be $cb
+
+        $pool = (New-TPTaskPool -OnTaskComplete @($cb, $cb2)).OnTaskComplete
+        $pool.Count | Should Be 2
+        $cb  -In $pool.Handlers | Should Be $True
+        $cb2 -In $pool.Handlers | Should Be $True
+    }
+
+    It "OnTaskError" {
+        $cb = {}
+        $cb2 = {}
+
+        $pool = (New-TPTaskPool -OnTaskError $cb).OnTaskError
+        $pool.Count | Should Be 1
+        $pool.Handlers[0] | Should Be $cb
+
+        $pool = (New-TPTaskPool -OnTaskError @($cb, $cb, $cb)).OnTaskError
+        $pool.Count | Should Be 1
+        $pool.Handlers[0] | Should Be $cb
+
+        $pool = (New-TPTaskPool -OnTaskError @($cb, $cb2)).OnTaskError
+        $pool.Count | Should Be 2
+        $cb  -In $pool.Handlers | Should Be $True
+        $cb2 -In $pool.Handlers | Should Be $True
+    }
+}
+
+
+Describe "Add-Task" {
+    It "given task name" {
+        $pool = New-TPTaskPool
+
+        (Add-TPTask $pool {} -Name "hello world!").Name | Should Be "hello world!"
+    }
+
+    It "generate task name" {
+        $pool = New-TPTaskPool
+
+        foreach ($i in 1..10) {
+            (Add-TPTask $pool {}).Name | Should Match "TaskPool_[0-9A-Z]{8}"
+        }
     }
 }

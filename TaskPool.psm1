@@ -1,13 +1,10 @@
 ﻿<#
   .SYNOPSIS
-  The Task
+  The task.
 
-  .EXAMPLE
-  PS> $pool = [TaskPool]::new()
-  PS> $task = [Task]@{ Name = "greeting"; Action = { Write-Host "hello world!" } }
-  PS> $pool.Add($task)
-  PS> $pool.Run()
-  hello world!
+  .DESCRIPTION
+  The task.
+  See help of `Add-TPTask`.
 #>
 class Task {
     [string]$Name
@@ -19,7 +16,7 @@ class Task {
 
     <#
       .SYNOPSIS
-      Start this task in background job
+      Start this task in background job.
     #>
     [Task]Start() {
         if (-not $this.Name) {
@@ -37,7 +34,7 @@ class Task {
 
     <#
       .SYNOPSIS
-      Wait until complete or fail this task, and return [TaskResult]
+      Wait until complete or fail this task, and return TaskResult.
     #>
     [TaskResult]Join() {
         try {
@@ -57,7 +54,7 @@ class Task {
 
     <#
       .SYNOPSIS
-      Teardown this task
+      Teardown this task.
 
       .DESCRIPTION
       [!IMPORTANT]
@@ -73,7 +70,7 @@ class Task {
 
 <#
   .SYNOPSIS
-  The result of [Task]
+  The result of Task.
 #>
 class TaskResult {
     [Task]$Task
@@ -85,7 +82,7 @@ class TaskResult {
 
 <#
   .SYNOPSIS
-  The set of running [Task]
+  The set of running Task.
 
   .DESCRIPTION
   This is a internal class of the TaskPool module.
@@ -121,13 +118,13 @@ class RunningTaskSet {
 
 <#
   .SYNOPSIS
-  The event handler manager
+  The event handler manager.
 
   .EXAMPLE
-  PS> $em = [EventManager]::new()
-  PS> $em.Add({ Write-Host "handler A: $_" })
-  PS> $em.Add({ Write-Host "handler B: $_" })
-  PS> $em.Invoke("foobar")
+  C:\PS> $em = [EventManager]::new()
+  C:\PS> $em.Add({ Write-Host "handler A: $_" })
+  C:\PS> $em.Add({ Write-Host "handler B: $_" })
+  C:\PS> $em.Invoke("foobar")
   handler A: foobar
   handler B: foobar
 #>
@@ -142,7 +139,7 @@ class EventManager {
 
     <#
       .SYNOPSIS
-      Add new event handler
+      Add new event handler.
     #>
     [void]Add([ScriptBlock]$Handler) {
        $this.Handlers.Add($Handler)
@@ -150,7 +147,7 @@ class EventManager {
 
     <#
       .SYNOPSIS
-      Remove a handler from this event
+      Remove a handler from this event.
     #>
     [void]Remove([ScriptBlock]$Handler) {
         $this.Handlers.Remove($Handler)
@@ -158,7 +155,7 @@ class EventManager {
 
     <#
       .SYNOPSIS
-      Invoke this event
+      Invoke this event.
     #>
     [void]Invoke([Object]$Context) {
         foreach ($cb in $this.Handlers) {
@@ -170,22 +167,11 @@ class EventManager {
 
 <#
   .SYNOPSIS
-  The [Task] scheduler
+  The task scheduler.
 
-  .EXAMPLE
-  PS> $pool = [TaskPool]::new()
-  PS> foreach ($i in 1..10) { $pool.Add("task $i", { param([int]$num) Write-Host "hello ${num}!" }, $i) }
-  PS> $pool.Run()
-  hello 1!
-  hello 2!
-  hello 3!
-  hello 4!
-  hello 5!
-  hello 6!
-  hello 7!
-  hello 8!
-  hello 9!
-  hello 10!
+  .DESCRIPTION
+  The task scheduler.
+  See help of `New-TPTaskPool`.
 #>
 class TaskPool {
     [int]$NumSlots
@@ -194,8 +180,8 @@ class TaskPool {
     hidden [System.Collections.Queue]$Queue
     hidden [RunningTaskSet]$Running
 
-    hidden Init([int]$NumSlots) {
-        $this.NumSlots = $NumSlots
+    TaskPool([int]$NumSlots) {
+        $this.NumSlots = [Math]::Max(1, $NumSlots)
         $this.OnTaskComplete = [EventManager]::new()
         $this.OnTaskError = [EventManager]::new()
         $this.Queue = [System.Collections.Queue]::new()
@@ -206,48 +192,22 @@ class TaskPool {
         $this | Add-Member ScriptProperty 'Count' { $this.QueueCount + $this.RunningCount }
     }
 
-    TaskPool([int]$NumSlots) {
-        $this.Init($NumSlots)
-    }
-
-    TaskPool() {
-        $this.Init(3)
-    }
-
     <#
       .SYNOPSIS
-      Add new [Task] into this task pool
+      Add new Task object into this task pool.
     #>
     [void]Add([Task]$Task) {
         $this.Queue.Enqueue($Task)
     }
 
-    <#
-      .SYNOPSIS
-      Add new [Task] into this task pool by task name, scriptblock, and argument list
-    #>
-    [void]Add([string]$Name, [ScriptBlock]$Action, [Object[]]$Arguments) {
-        $this.Add([Task]@{
-            Name = $Name
-            Action = $Action
-            Arguments = $Arguments
-        })
-    }
 
     <#
       .SYNOPSIS
-      Add new [Task] into this task pool by task name and scriptblock
-    #>
-    [void]Add([string]$Name, [ScriptBlock]$Action) {
-        $this.Add($Name, $Action, @())
-    }
-
-
-    <#
-      .SYNOPSIS
-      Run all [Task]s in this pool
+      Run all Tasks in this pool.
 
       .DESCRIPTION
+      Run all Tasks in this pool.
+
       This method will blocking until done or fail all tasks.
     #>
     [void]Run() {
@@ -279,4 +239,101 @@ class TaskPool {
 }
 
 
-Export-ModuleMember -Function Task, TaskPool
+<#
+  .SYNOPSIS
+  Make a new TaskPool for execute task parallelly.
+
+  .PARAMETER NumSlots
+  Number of execute tasks in same time.
+
+  .PARAMETER OnTaskComplete
+  Callback function(s) for receive each succeed tasks result.
+
+  .PARAMETER OnTaskError
+  Callback function(s) for receive error of each task calling.
+
+  .OUTPUTS
+  An instance of TaskPool.
+
+  .EXAMPLE
+  C:\PS> $pool = New-TPTaskPool -OnTaskComplete { Write-Host $_.Result }
+  C:\PS> foreach ($i in 1..10) {
+  >>         Add-TPTask $pool {
+  >>             param([int]$num)
+  >>
+  >>             "hello ${num}!"
+  >>         } -Arguments @($i)
+  >>     }
+  C:\PS> $pool.Run()
+  hello 1!
+  hello 2!
+  hello 3!
+  hello 4!
+  hello 5!
+  hello 6!
+  hello 7!
+  hello 8!
+  hello 9!
+  hello 10!
+#>
+function New-TaskPool {
+    param(
+        [int]$NumSlots = 3,
+        [ScriptBlock[]]$OnTaskComplete = @(),
+        [ScriptBlock[]]$OnTaskError = @()
+    )
+
+    $pool = [TaskPool]::new($NumSlots)
+
+    $OnTaskComplete | foreach { $pool.OnTaskComplete.Add($_) }
+    $OnTaskError | foreach { $pool.OnTaskError.Add($_) }
+
+    $pool
+}
+
+
+<#
+  .SYNOPSIS
+  Make a new Task and register to TaskPool that created by `New-TPTaskPool` command.
+
+  .PARAMETER TaskPool
+  A TaskPool for register the new Task.
+
+  .PARAMETER Action
+  Something to do in the new Task.
+
+  .PARAMETER Arguments
+  Arguments for Action.
+
+  .PARAMETER Name
+  The name of this Task. It will be random value if omitted.
+
+  .PARAMETER MaxRetry
+  Maximum retry count if failing task. If less than 0, retry forever.
+
+  .OUTPUTS
+  Created new Task object.
+#>
+function Add-Task {
+    param(
+        [Parameter(Mandatory,Position=0)][TaskPool]$TaskPool,
+        [Parameter(Mandatory,Position=1)][ScriptBlock]$Action,
+        [Object[]]$Arguments,
+        [string]$Name,
+        [int]$MaxRetry = 3
+    )
+
+    if (-not $Name) {
+        $Name = 'TaskPool_{0:x8}' -f (Get-Random)
+    }
+
+    $task = [Task]@{
+        Name = $Name
+        Action = $Action
+        Arguments = $Arguments
+        MaxRetry = $MaxRetry
+    }
+    $TaskPool.Add($task)
+
+    $task
+}
