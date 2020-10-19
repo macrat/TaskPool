@@ -72,9 +72,9 @@ Describe "TaskPool" {
                 $result.Error += 1
             }.GetNewClosure()
 
-        foreach ($i in 1..100) {
+        foreach ($i in 1..10) {
             Add-TPTask $pool {
-                if ((Get-Random -min 1 -max 10) -eq 1) {
+                if ($using:TPContext.RetryCount -lt 2) {
                     throw "something error"
                 }
             }
@@ -82,9 +82,8 @@ Describe "TaskPool" {
 
         $pool.Run()
 
-        $result.Error | Should BeGreaterThan 0
-        $result.Error | Should BeLessThan 1000
-        $result.Complete | Should Be 100
+        $result.Error | Should Be 20
+        $result.Complete | Should Be 10
     }
 
     It "max retry" {
