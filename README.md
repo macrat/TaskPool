@@ -55,4 +55,30 @@ $pool.OnTaskComplete.Add({
 })
 
 $pool.Run()
+# OUTPUT:
+#  foo,bar
+```
+
+
+``` ps1
+Import-Module .\TaskPool
+
+
+$pool = New-TPTaskPool
+
+Add-TPTask pool {
+    "My name is $($using:TPContext.TaskName). I'm retried $($using:TPContext.RetryCount) times of $($using:TPContext.MaxRetry) with execution ID '$($using:TPContext.ExecutionID)'."
+}
+
+$pool.OnTaskError.Add({
+    Write-Error $_.Error
+})
+
+$pool.OnTaskComplete.Add({
+    Write-Host $_.Result
+})
+
+$pool.Run()
+# OUTPUT:
+#  My name is TaskPool_086e01d5. I'm retried 0 times of 10 with execution ID 'b0144c13-074c-447a-9781-5f9b5c883a58'
 ```

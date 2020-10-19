@@ -55,6 +55,82 @@ Describe "Task" {
             }).Start()
         } | Should Throw "Action was not set"
     }
+
+    Context "context variable" {
+        It "TaskName" {
+            $task = [Task]@{
+                Name = "TaskNameTest"
+                Action = {
+                    "TaskName = $($using:TPContext.TaskName)"
+                }
+            }
+
+            $result = $task.Start().Join()
+            $task.Teardown()
+            $result.Result | Should Be "TaskName = TaskNameTest"
+        }
+
+        It "ExecutionID" {
+            $taskA = [Task]@{
+                Name = "ExecutionIDTest_A"
+                Action = {
+                    "ExecutionID = $($using:TPContext.executionID)"
+                }
+            }
+            $taskB = [Task]@{
+                Name = "ExecutionIDTest_B"
+                Action = {
+                    "ExecutionID = $($using:TPContext.executionID)"
+                }
+            }
+
+            $resultA = $taskA.Start().Join()
+            $taskA.Teardown()
+            $resultA.Result | Should Match "ExecutionID = [a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}"
+
+            $resultB = $taskB.Start().Join()
+            $taskB.Teardown()
+            $resultB.Result | Should Match "ExecutionID = [a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}"
+
+            $resultA.Result | Should Not Be $resultB.Result
+        }
+
+        It "RetryCount" {
+            $task = [Task]@{
+                Name = "RetryCountTest"
+                Action = {
+                    if ($using:TPContext.RetryCount -lt 1) {
+                        throw "first execution"
+                    }
+                    "second execution"
+                }
+            }
+
+            $result = $task.Start().Join()
+            $task.Teardown()
+            $result.Error | Should Be "first execution"
+
+            $task.RetryCount += 1
+
+            $result = $task.Start().Join()
+            $task.Teardown()
+            $result.Result | Should Be "second execution"
+        }
+
+        It "MaxRetry" {
+            $task = [Task]@{
+                Name = "MaxRetryTest"
+                Action = {
+                    "MaxRetry = $($using:TPContext.MaxRetry)"
+                }
+                MaxRetry = 42
+            }
+
+            $result = $task.Start().Join()
+            $task.Teardown()
+            $result.Result | Should Be "MaxRetry = 42"
+        }
+    }
 }
 
 

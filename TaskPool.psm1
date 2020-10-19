@@ -1,5 +1,22 @@
 ﻿<#
   .SYNOPSIS
+  Context for Task.
+
+  .DESCRIPTION
+  The context value for current task.
+
+  You can use this as `$using:TPContext`.
+#>
+class Context {
+    [string]$TaskName
+    [string]$ExecutionID
+    [int]$RetryCount
+    [int]$MaxRetry
+}
+
+
+<#
+  .SYNOPSIS
   The task.
 
   .DESCRIPTION
@@ -13,6 +30,7 @@ class Task {
     [ScriptBlock]$Action
     [Object[]]$Arguments = @()
     hidden [System.Management.Automation.Job]$Job = $null
+    hidden [string]$ExecutionID = ""
 
     <#
       .SYNOPSIS
@@ -27,6 +45,17 @@ class Task {
             throw "Action was not set"
         }
 
+        # context for task.
+        # use they like a `$using:TPContext.TaskName` in the task action.
+        $TPContext = [Context]@{
+            TaskName = $this.Name
+            ExecutionID = [GUID]::NewGUID()
+            RetryCount = $this.RetryCount
+            MaxRetry = $this.MaxRetry
+        }
+
+        $this.ExecutionID = $TPContext.ExecutionID
+
         $this.Job = Start-Job $this.Action -ArgumentList $this.Arguments -Name $this.Name
 
         return [Task]$this
@@ -40,12 +69,14 @@ class Task {
         try {
             return [TaskResult]@{
                 Task = $this
+                ExecutionID = $this.ExecutionID
                 Result = ($this.Job | Wait-Job | Receive-Job -ErrorAction Stop)
                 Success = $true
             }
         } catch {
             return [TaskResult]@{
                 Task = $this
+                ExecutionID = $this.ExecutionID
                 Error = $_
                 Success = $false
             }
@@ -74,6 +105,7 @@ class Task {
 #>
 class TaskResult {
     [Task]$Task
+    [string]$ExecutionID
     [Object]$Result
     [Object]$Error
     [boolean]$Success
